@@ -10,12 +10,17 @@ interface RoomCheckProps {
   onCancel: () => void
 }
 
-type Phase = 'permission' | 'scanning' | 'review' | 'rejected'
+type Phase = 'permission' | 'scanning' | 'failed' | 'review' | 'rejected'
+
+/** Failed scans allowed before automatic disqualification kicks in. */
+const MAX_SCANS = 5
 
 /**
  * Pre-test room scan. The candidate pans the camera around the room for ~10
  * seconds while the feed is analyzed for a second person, unusual lighting or
- * rapid movement. Any detection automatically disqualifies the candidate.
+ * rapid movement. A flagged scan can simply be redone — the candidate gets up
+ * to MAX_SCANS attempts before an automatic disqualification kicks in. Only
+ * denying camera access disqualifies immediately.
  */
 export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, onCancel }: RoomCheckProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -23,6 +28,8 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
   const streamRef = useRef<MediaStream | null>(null)
   const [phase, setPhase] = useState<Phase>('permission')
   const [countdown, setCountdown] = useState(10)
+  const [attempt, setAttempt] = useState(1)
+  const attemptRef = useRef(1)
   const [rejectionReason, setRejectionReason] = useState('')
   const [cameraError, setCameraError] = useState('')
   const [scanProgress, setScanProgress] = useState(0)
@@ -53,6 +60,12 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
     return () => clearTimeout(id)
   }, [phase, rejectionReason, onDisqualify])
 
+  /** Release the camera without unmounting (kept running across scan retries). */
+  const stopStream = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop())
+    streamRef.current = null
+  }, [])
+
   /** One frame at a time: pixel heuristics + the ML face count. */
   const sampleViolation = useCallback((): string | null => {
     const video = videoRef.current
@@ -71,7 +84,12 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
     // whose back is turned or who walks past mid-pan.
     const ml = detectFaceFrame(video)
     if (ml && ml.faces >= 2) {
-      return 'Multiple people detected in the room. Only the test-taker may be present.'
+      return 'Multiple people detected in the room. Please ask anyone else to leave and scan again.'
+    }
+    // During room scan, pixel-only multi-person is a soft hint — require ML
+    // confirmation before treating it as a real violation.
+    if (px.personCount === 2 && (!ml || ml.faces < 2)) {
+      return null
     }
     return px.violation
   }, [])
@@ -86,19 +104,26 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
     setTimeout(() => {
       const result2 = sampleViolation()
 
-      const detected = [result1, result2].find((r) => r !== null)
-      if (detected) {
-        setRejectionReason(detected)
-        setPhase('rejected')
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach((t) => t.stop())
-          streamRef.current = null
+      // Require BOTH samples to agree on the violation to reduce false positives.
+      // A single fluke frame during panning should not fail the scan.
+      const detected = result1 && result2 ? result1 : (result1 ?? result2)
+      // Only treat it as a real violation if both samples found something.
+      const confirmed = result1 && result2 ? detected : null
+      if (confirmed) {
+        setRejectionReason(confirmed)
+        // The first flagged scans are retryable — only the last strike
+        // (or refusing the camera) disqualifies.
+        if (attemptRef.current >= MAX_SCANS) {
+          setPhase('rejected')
+          stopStream()
+        } else {
+          setPhase('failed')
         }
       } else {
         setPhase('review')
       }
     }, 500)
-  }, [sampleViolation])
+  }, [sampleViolation, stopStream])
 
   const startCountdown = useCallback(() => {
     setCountdown(10)
@@ -120,6 +145,15 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
       }
     }, 100)
   }, [performScan])
+
+  /** Run another scan with a fresh 10-second window. */
+  const retryScan = useCallback(() => {
+    setRejectionReason('')
+    attemptRef.current += 1
+    setAttempt(attemptRef.current)
+    setPhase('scanning')
+    startCountdown()
+  }, [startCountdown])
 
   const requestCamera = useCallback(async () => {
     try {
@@ -144,6 +178,8 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
   }, [startCountdown])
 
   const retake = useCallback(() => {
+    attemptRef.current = 1
+    setAttempt(1)
     setPhase('permission')
     setRejectionReason('')
     setScanProgress(0)
@@ -151,20 +187,14 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
 
   const proceed = useCallback(() => {
     // Stop camera before proceeding
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop())
-      streamRef.current = null
-    }
+    stopStream()
     onPass()
-  }, [onPass])
+  }, [stopStream, onPass])
 
   const handleCancel = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop())
-      streamRef.current = null
-    }
+    stopStream()
     onCancel()
-  }, [onCancel])
+  }, [stopStream, onCancel])
 
   return (
     <div className="animate-fade-up mx-auto flex min-h-screen max-w-2xl flex-col items-center px-4 py-12 sm:px-6">
@@ -182,7 +212,9 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
           <p className="mt-2 max-w-md text-sm leading-relaxed text-ink-500">
             Before starting <b className="text-ink-900">{subjectName} ({subjectChinese})</b>, you must
             pan your camera around the room so the system can confirm{' '}
-            <b className="text-ink-900">no other person is present</b>.
+            <b className="text-ink-900">no other person is present</b>. You get up to{' '}
+            <b className="text-ink-900">{MAX_SCANS} scans</b> — a flagged scan can simply be
+            redone, so take your time and show every corner of the room.
           </p>
         </div>
 
@@ -202,7 +234,10 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
           {phase === 'scanning' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30">
               <div className="rounded-xl bg-black/60 px-6 py-4 text-center">
-                <p className="text-lg font-bold text-white">
+                <p className="text-xs font-bold uppercase tracking-widest text-white/70">
+                  Scan {attempt} / {MAX_SCANS}
+                </p>
+                <p className="mt-1 text-lg font-bold text-white">
                   Scanning room...
                 </p>
                 <p className="mt-1 text-sm text-white/80">
@@ -256,6 +291,7 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
                   'No other person should be visible anywhere in the room',
                   'Ensure proper lighting in the room',
                   'Remove any notes, books, or electronic devices',
+                  `Up to ${MAX_SCANS} scans allowed — a flagged scan will not disqualify you right away`,
                 ].map((req) => (
                   <li key={req} className="flex items-start gap-2 text-sm text-ink-700">
                     <span className="mt-0.5 text-brand-600">•</span>
@@ -286,10 +322,11 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
         {phase === 'scanning' && (
           <div className="mt-6 rounded-xl border border-brand-300 bg-brand-50 p-4">
             <p className="text-sm font-semibold text-brand-700">
-              Camera active — scanning in progress...
+              Camera active — scan {attempt} of {MAX_SCANS} in progress...
             </p>
             <p className="mt-1 text-xs text-brand-600">
               Slowly turn your camera to show the entire room. The scan takes 10 seconds.
+              If it is flagged you can simply scan again.
             </p>
           </div>
         )}
@@ -325,6 +362,46 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
           </div>
         )}
 
+        {/* Phase: Failed — retryable scan */}
+        {phase === 'failed' && (
+          <div className="mt-6 space-y-4">
+            <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-6 text-center">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-4xl font-extrabold text-amber-500">
+                !
+              </div>
+              <h2 className="mt-4 text-xl font-extrabold text-amber-800">
+                Room scan flagged — {attempt} of {MAX_SCANS} attempts used
+              </h2>
+              <p className="mt-3 text-sm leading-relaxed text-amber-700">
+                {rejectionReason || 'Something unusual was detected during the scan.'}
+              </p>
+              <p className="mt-3 text-xs font-semibold text-amber-600">
+                You are not disqualified yet — you have{' '}
+                {Math.max(0, MAX_SCANS - attempt)} attempt
+                {MAX_SCANS - attempt === 1 ? '' : 's'} left. Ask anyone present to leave,
+                move to the next room, or fix the lighting, then scan again.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="flex-1 rounded-xl border border-ink-300/50 bg-white px-4 py-3 text-sm font-semibold text-ink-700 transition hover:bg-paper"
+              >
+                ← Back to papers
+              </button>
+              <button
+                type="button"
+                onClick={retryScan}
+                className="flex-1 rounded-xl bg-amber-600 px-4 py-3 text-sm font-bold text-white shadow-md shadow-amber-600/25 transition hover:bg-amber-700 active:scale-[0.99]"
+              >
+                Scan again — attempt {Math.min(MAX_SCANS, attempt + 1)} of {MAX_SCANS} →
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Phase: Rejected — automatic disqualification */}
         {phase === 'rejected' && (
           <div className="mt-6 space-y-4">
@@ -350,8 +427,9 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
         {/* Warning footer */}
         <div className="mt-8 rounded-xl border border-amber-300/50 bg-amber-50/50 p-4">
           <p className="text-xs font-semibold text-amber-700">
-            Important: Any attempt to bypass the room verification or using fake video feeds will
-            result in immediate, automatic disqualification from the examination.
+            You get {MAX_SCANS} room scans — a flagged scan is never an instant disqualification.
+            However, denying camera access, using fake video feeds, or repeatedly failing the scan
+            results in automatic disqualification from the examination.
           </p>
         </div>
       </div>

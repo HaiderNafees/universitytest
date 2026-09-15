@@ -21,6 +21,8 @@ interface Persisted {
   candidate: Candidate | null
   results: Partial<Record<SubjectId, SubjectResult>>
   disqualification: Disqualification | null
+  /** Username whose results are stored — isolates sessions between candidates. */
+  resultsOwner: string | null
 }
 
 function freshResult(subjectId: SubjectId): SubjectResult {
@@ -41,16 +43,25 @@ function freshResult(subjectId: SubjectId): SubjectResult {
 }
 
 function loadPersisted(): Persisted {
-  const fallback: Persisted = { candidate: null, results: {}, disqualification: null }
+  const fallback: Persisted = { candidate: null, results: {}, disqualification: null, resultsOwner: null }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return fallback
     const parsed = JSON.parse(raw) as Persisted
     if (parsed && typeof parsed === 'object') {
+      const candidate = parsed.candidate ?? null
+      // Sessions saved before the owner field belonged to the stored candidate.
+      const resultsOwner = parsed.resultsOwner ?? (candidate ? candidate.username : null)
+      // Clear stale disqualifications from before the grace-period update
+      // (Sep 15 2026) so users aren't locked out by old instant-disqualifications.
+      const disq = parsed.disqualification
+      const STALE_CUTOFF = new Date('2026-09-15').getTime()
+      const clearedDisq = disq && disq.at < STALE_CUTOFF ? null : disq ?? null
       return {
-        candidate: parsed.candidate ?? null,
+        candidate,
         results: parsed.results ?? {},
-        disqualification: parsed.disqualification ?? null,
+        disqualification: clearedDisq,
+        resultsOwner,
       }
     }
     return fallback
@@ -83,11 +94,13 @@ export default function App() {
       candidate: snap.candidate,
       results: finalizeResults(snap.results),
       disqualification: snap.disqualification,
+      resultsOwner: snap.resultsOwner,
     }
   })
   const [candidate, setCandidate] = useState<Candidate | null>(boot.candidate)
   const [results, setResults] = useState<Partial<Record<SubjectId, SubjectResult>>>(boot.results)
   const [disqualification, setDisqualification] = useState<Disqualification | null>(boot.disqualification)
+  const [resultsOwner, setResultsOwner] = useState<string | null>(boot.resultsOwner)
   const [view, setView] = useState<View>(() =>
     boot.disqualification ? 'disqualified' : boot.candidate ? 'subjects' : 'home',
   )
@@ -96,11 +109,14 @@ export default function App() {
   // Persist everything except the transient route.
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ candidate, results, disqualification }))
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ candidate, results, disqualification, resultsOwner }),
+      )
     } catch {
       /* storage full or unavailable — ignore */
     }
-  }, [candidate, results, disqualification])
+  }, [candidate, results, disqualification, resultsOwner])
 
   const goSubjects = useCallback(() => {
     setActive(null)
@@ -131,15 +147,21 @@ export default function App() {
 
   /** Successful login — profile comes from the credentials registry (src/data/credentials.json). */
   const login = (c: Candidate) => {
+    // A different candidate signing in on this browser starts a fresh session.
+    if (resultsOwner !== c.username) {
+      setResults({})
+      setDisqualification(null)
+    }
+    setResultsOwner(c.username)
     setCandidate(c)
     setActive(null)
     setView('subjects')
   }
 
   const logout = () => {
+    // Keep the results (and any disqualification) so the home page can show the
+    // result countdown and a later sign-in resumes the same session.
     setCandidate(null)
-    setResults({})
-    setDisqualification(null)
     setActive(null)
     setView('home')
   }
@@ -237,7 +259,7 @@ export default function App() {
       <div className="flex min-h-screen flex-col">
         <Header candidate={null} onHome={() => setView('home')} />
         <main className="flex-1">
-          <HomePage onLogin={login} />
+          <HomePage results={results} onLogin={login} />
         </main>
         <Footer />
       </div>

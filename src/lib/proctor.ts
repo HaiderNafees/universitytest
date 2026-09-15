@@ -140,7 +140,7 @@ const VIOLATION_THRESHOLD = 4
 const HIDDEN_GRACE_MS = 6_000
 const FEED_DEAD_MS = 6_000
 
-const MSG_MULTI = 'Multiple people detected in the room. Only the test-taker may be present.'
+const MSG_MULTI = 'Multiple people detected in the room. Please ask anyone else to leave — disqualification will follow if this persists.'
 const MSG_NO_PERSON = 'No person detected — the candidate is not visible on camera.'
 const MSG_NO_FACE = 'No face detected — you must keep facing the camera during the test.'
 const MSG_NOT_LOOKING = 'You are not looking at the camera — keep your eyes on the screen.'
@@ -170,16 +170,16 @@ function classifyFrame(px: FrameAnalysis, ml: FaceFrame | null): ViolationHit | 
   const pixelMulti = px.personCount === 2
 
   if (ml !== null) {
-    if (ml.faces >= 2) return { reason: MSG_MULTI, hard: true }
+    if (ml.faces >= 2) return { reason: MSG_MULTI, hard: false }
     if (ml.faces === 0) {
-      if (pixelMulti) return { reason: MSG_MULTI, hard: true }
+      if (pixelMulti) return { reason: MSG_MULTI, hard: false }
       // ML sees nobody. If the pixel heuristic still detects skin, someone is
       // there but not facing the camera — equally disqualifying during a test.
       return { reason: px.personCount === 0 ? MSG_NO_PERSON : MSG_NO_FACE, hard: false }
     }
     // Exactly one face — the candidate. A second, partially visible person
     // (skin in two regions) still counts, unless the model disagrees.
-    if (pixelMulti) return { reason: MSG_MULTI, hard: true }
+    if (pixelMulti) return { reason: MSG_MULTI, hard: false }
     const gaze = ml.primary?.gaze
     if (gaze && gaze.verdict !== 'looking') {
       return { reason: MSG_NOT_LOOKING, hard: false }
@@ -194,7 +194,7 @@ function classifyFrame(px: FrameAnalysis, ml: FaceFrame | null): ViolationHit | 
   }
 
   // Model unavailable — the old pixel-only behaviour.
-  if (px.violation) return { reason: px.violation, hard: pixelMulti }
+  if (px.violation) return { reason: px.violation, hard: false }
   return null
 }
 

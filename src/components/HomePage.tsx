@@ -1,17 +1,20 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { subjects } from '../data/exams'
+import { getQuestions } from '../data/questions'
 import { RULES } from '../data/rules'
 import { authenticate } from '../lib/auth'
-import type { Candidate } from '../types'
+import { accuracyPercent, announcementAt, formatDuration, resultsAnnounced } from '../lib/exam'
+import type { Candidate, SubjectId, SubjectResult } from '../types'
 
 interface HomePageProps {
+  results: Partial<Record<SubjectId, SubjectResult>>
   onLogin: (candidate: Candidate) => void
 }
 
 const inputCls =
   'w-full rounded-lg border border-ink-300/50 bg-white px-3.5 py-2.5 text-sm text-ink-900 placeholder:text-ink-300 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25'
 
-export function HomePage({ onLogin }: HomePageProps) {
+export function HomePage({ results, onLogin }: HomePageProps) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -77,6 +80,12 @@ export function HomePage({ onLogin }: HomePageProps) {
           </dl>
         </div>
       </section>
+
+      {subjects.some((s) => results[s.id]) && (
+        <section className="mx-auto max-w-6xl px-4 sm:px-6">
+          <ResultCountdowns results={results} />
+        </section>
+      )}
 
       <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
         <div className="grid gap-8 lg:grid-cols-[1.1fr_1fr]">
@@ -216,6 +225,148 @@ export function HomePage({ onLogin }: HomePageProps) {
           </div>
         </div>
       </section>
+    </div>
+  )
+}
+
+/**
+ * Live countdown to result announcement, shown on the logged-out home page.
+ * Reveals the score for each paper once the three-day wait is over.
+ */
+function ResultCountdowns({ results }: { results: Partial<Record<SubjectId, SubjectResult>> }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  const pad = (n: number) => String(n).padStart(2, '0')
+
+  return (
+    <div className="rounded-2xl border border-ink-300/30 bg-white p-6 shadow-lg shadow-ink-900/5">
+      <h2 className="text-lg font-extrabold tracking-tight text-ink-900">Your result timer</h2>
+      <p className="mt-1 text-sm text-ink-500">
+        Results are announced exactly three days after each paper is submitted. This
+        countdown keeps running even after you sign out.
+      </p>
+
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        {subjects.map((s) => {
+          const result = results[s.id]
+          if (!result) return null
+          const count = getQuestions(s.id).length
+          const icon = (
+            <span
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br ${s.accent} text-[10px] font-extrabold tracking-wider text-white`}
+            >
+              {s.icon}
+            </span>
+          )
+
+          // Paper started but not yet submitted — visible only if signed out mid-paper.
+          if (!result.completed) {
+            const leftMs = Math.max(0, result.startedAt + result.timeLimitMs - now)
+            return (
+              <div key={s.id} className="rounded-xl border border-ink-300/30 bg-paper p-4">
+                <div className="flex items-center gap-2.5">
+                  {icon}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-ink-900">
+                      {s.name} <span className="font-normal text-ink-300">{s.chinese}</span>
+                    </p>
+                    <p className="text-[11px] text-ink-500">In progress · {formatDuration(leftMs)} left</p>
+                  </div>
+                </div>
+                <p className="mt-3 text-xs font-semibold text-amber-700">
+                  Sign back in to continue this paper before time runs out.
+                </p>
+              </div>
+            )
+          }
+
+          // Countdown finished — the score is revealed right here.
+          if (resultsAnnounced(result, now)) {
+            return (
+              <div key={s.id} className="rounded-xl border border-emerald-300/60 bg-emerald-50/60 p-4">
+                <div className="flex items-center gap-2.5">
+                  {icon}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-ink-900">
+                      {s.name} <span className="font-normal text-ink-300">{s.chinese}</span>
+                    </p>
+                    <p className="text-[11px] text-ink-500">Result announced</p>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-between rounded-lg bg-white px-3 py-2 shadow-sm">
+                  <span className="text-xs font-semibold text-ink-500">Score</span>
+                  <span className="text-lg font-extrabold text-emerald-600">
+                    {result.correct} / {count}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs font-semibold text-ink-500">
+                  Accuracy {accuracyPercent(result, count)}% · Sign back in for the full review
+                </p>
+              </div>
+            )
+          }
+
+          // Waiting for the announcement — live countdown.
+          const remaining = Math.max(0, announcementAt(result) - now)
+          const total = Math.ceil(remaining / 1000)
+          const d = Math.floor(total / 86400)
+          const h = Math.floor((total % 86400) / 3600)
+          const m = Math.floor((total % 3600) / 60)
+          const sec = total % 60
+
+          return (
+            <div key={s.id} className="rounded-xl border border-ink-300/30 bg-paper p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  {icon}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-ink-900">
+                      {s.name} <span className="font-normal text-ink-300">{s.chinese}</span>
+                    </p>
+                    <p className="text-[11px] text-ink-500">
+                      Submitted {new Date(result.submittedAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-700">
+                  Awaiting result
+                </span>
+              </div>
+
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {[
+                  { v: d, l: 'Days' },
+                  { v: h, l: 'Hours' },
+                  { v: m, l: 'Minutes' },
+                  { v: sec, l: 'Seconds' },
+                ].map((b) => (
+                  <div key={b.l} className="rounded-lg bg-white px-1 py-2.5 text-center shadow-sm">
+                    <div className="font-mono text-2xl font-extrabold tabular-nums text-ink-900">
+                      {pad(b.v)}
+                    </div>
+                    <div className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-ink-500">
+                      {b.l}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <p className="mt-2 text-[11px] font-semibold text-ink-500">
+                Result on{' '}
+                {new Date(announcementAt(result)).toLocaleDateString(undefined, {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric',
+                })}
+              </p>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
