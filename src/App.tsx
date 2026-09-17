@@ -11,16 +11,18 @@ import { TestPage } from './components/TestPage'
 import { subjectMap, subjectOrder } from './data/exams'
 import { getQuestions } from './data/questions'
 import { grade, resultsAnnounced } from './lib/exam'
+import { TRIAL_MODE } from './lib/proctor'
 import type { Candidate, Disqualification, SubjectId, SubjectResult, View } from './types'
 
 /**
- * v2: fresh start for the new CSCA Advanced question bank — all previously
- * saved results, in-progress attempts and disqualifications are discarded.
- * Bumping this key resets every candidate's browser on next visit.
+ * v3: trial-phase reset (Sep 17 2026) — every candidate's saved results,
+ * in-progress attempts and disqualifications are wiped so the trial run
+ * starts from a clean slate. Bumping this key resets every candidate's
+ * browser on next visit.
  */
-const STORAGE_KEY = 'qiqihar-csca-exam-v2'
-/** Previous storage version — removed once on boot to clear stale user data. */
-const LEGACY_STORAGE_KEYS = ['qiqihar-csca-exam-v1']
+const STORAGE_KEY = 'qiqihar-csca-exam-v3'
+/** Previous storage versions — removed once on boot to clear stale user data. */
+const LEGACY_STORAGE_KEYS = ['qiqihar-csca-exam-v1', 'qiqihar-csca-exam-v2']
 const TIME_LIMIT_MS = 45 * 60 * 1000
 
 interface Persisted {
@@ -151,9 +153,13 @@ export default function App() {
   /**
    * Automatic disqualification — final and persisted. The candidate keeps
    * dashboard access (results, statuses, review) but every paper is locked.
+   *
+   * Trial phase: this is a no-op. Nobody can be disqualified from a trial
+   * run, so all pre-test checks and in-test monitoring only ever warn.
    */
   const disqualify = useCallback(
     (reason: string, phase: Disqualification['phase'], subjectId: SubjectId | null) => {
+      if (TRIAL_MODE) return
       setDisqualification({ reason, at: Date.now(), phase, subjectId })
       setActive(null)
       setView('subjects')

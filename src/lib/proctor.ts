@@ -19,6 +19,14 @@ const SKIN_RATIO_MAX = 0.45
 const REGION_SKIN_RATIO = 0.03
 const MOTION_VIOLATION = 0.35
 
+/**
+ * Trial phase (Sep 17 2026): every candidate is on a trial run of the exam.
+ * The pre-test camera + room checks still run, but nothing during them or
+ * during the live test can disqualify anyone — any movement, absence or
+ * anomaly is ignored. Flip this to false to restore strict enforcement.
+ */
+export const TRIAL_MODE = true
+
 function isSkin(r: number, g: number, b: number): boolean {
   return (
     r > 95 && g > 40 && b > 20 &&
@@ -231,6 +239,14 @@ export function useProctor(
   const [warning, setWarning] = useState<string | null>(null)
 
   useEffect(() => {
+    // Trial phase: no live sampling at all — the status pill always shows
+    // "trial" and nothing can ever accumulate into a disqualification.
+    // ensureVisionLoaded keeps the model warm for the pre-test screens.
+    if (TRIAL_MODE) {
+      ensureVisionLoaded()
+      return
+    }
+
     let cancelled = false
     let interval: ReturnType<typeof setInterval> | null = null
     // Kick off the face-model download as soon as monitoring starts so the
@@ -341,5 +357,5 @@ export function useProctor(
     // Refs are stable across renders, so this effect still runs exactly once.
   }, [videoRef, canvasRef])
 
-  return { active, warning }
+  return { active: active || TRIAL_MODE, warning }
 }

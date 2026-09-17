@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatClock, OPTION_LETTERS } from '../lib/exam'
-import { useProctor } from '../lib/proctor'
+import { TRIAL_MODE, useProctor } from '../lib/proctor'
 import type { Question, SubjectMeta, SubjectResult } from '../types'
 
 interface TestPageProps {
@@ -154,19 +154,23 @@ export function TestPage({ meta, questions, result, onAnswer, onToggleFlag, onSu
             {/* Proctoring status */}
             <div
               className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold ${
-                proctor.warning
-                  ? 'animate-pulse bg-amber-100 text-amber-800'
-                  : proctor.active
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : 'bg-red-100 text-red-700'
+                TRIAL_MODE
+                  ? 'bg-sky-100 text-sky-800'
+                  : proctor.warning
+                    ? 'animate-pulse bg-amber-100 text-amber-800'
+                    : proctor.active
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-red-100 text-red-700'
               }`}
               title="Camera proctoring status"
             >
-              {proctor.warning
-                ? proctor.warning
-                : proctor.active
-                  ? 'Proctoring active'
-                  : 'Camera off'}
+              {TRIAL_MODE
+                ? 'Trial run — movement is ignored'
+                : proctor.warning
+                  ? proctor.warning
+                  : proctor.active
+                    ? 'Proctoring active'
+                    : 'Camera off'}
             </div>
 
             {/* Timer */}

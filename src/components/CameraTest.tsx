@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { analyzeFrame, captureFrame } from '../lib/proctor'
+import { TRIAL_MODE, analyzeFrame, captureFrame } from '../lib/proctor'
 import { detectFaceFrame, ensureVisionLoaded } from '../lib/vision'
 
 interface CameraTestProps {
@@ -38,8 +38,8 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
   const [failedReason, setFailedReason] = useState('')
   const [rejectedReason, setRejectedReason] = useState('')
 
-  // Warm up the face model as soon as this screen mounts so the ML check is
-  // typically live by the time the first attempt starts.
+  // Trial phase: warm up the ML model so the presence check works, but the
+  // pre-test screen also shows a reminder that nothing can disqualify here.
   useEffect(() => {
     ensureVisionLoaded()
   }, [])
@@ -58,21 +58,6 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
     }
   }, [stopStream])
 
-  /**
-   * Disqualification for the pre-test stage is reserved for refusing camera
-   * access — not being visible only keeps the candidate out of the paper.
-   */
-  const reject = useCallback(
-    (reason: string) => {
-      if (doneRef.current) return
-      doneRef.current = true
-      setRejectedReason(reason)
-      setPhase('rejected')
-      window.setTimeout(() => onDisqualify(reason), 1500)
-    },
-    [onDisqualify],
-  )
-
   /** A failed attempt — retries are unlimited, so this never disqualifies. */
   const failAttempt = useCallback((reason: string) => {
     if (timerRef.current) clearInterval(timerRef.current)
@@ -80,9 +65,34 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
     setPhase('failed')
   }, [])
 
+  /**
+   * Trial phase: denying camera access does not disqualify either — it just
+   * ends this attempt with a friendly explanation and an unlimited retry.
+   */
+  const reject = useCallback(
+    (reason: string) => {
+      if (TRIAL_MODE) {
+        failAttempt(reason)
+        return
+      }
+      if (doneRef.current) return
+      doneRef.current = true
+      setRejectedReason(reason)
+      setPhase('rejected')
+      window.setTimeout(() => onDisqualify(reason), 1500)
+    },
+    [onDisqualify, failAttempt],
+  )
+
   /** Candidate not visible: warn loudly and restart the attempt from scratch. */
   function handleNotVisible(attemptNumber: number) {
     if (timerRef.current) clearInterval(timerRef.current)
+    // Trial phase: absence or movement is never a problem — if the feed is
+    // readable the trial simply passes, face or no face.
+    if (TRIAL_MODE) {
+      setPhase('review')
+      return
+    }
     setPhase('notvisible')
     // Restart the attempt so the candidate gets a fresh window once they appear.
     // There is no cap on restarts — the test keeps going until they are visible.
@@ -119,7 +129,10 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
       // fallback for while the ML model is still loading.
       const faceDetected = ml !== null ? ml.faces >= 1 : analyzeFrame(canvas, null).personCount >= 1
 
-      if (faceDetected) {
+      // Trial phase: the only thing being verified is that the camera works.
+      // Nobody has to be visible and no movement is judged — the check passes
+      // once the feed can be read, and any absence is simply ignored.
+      if (TRIAL_MODE || faceDetected) {
         if (timerRef.current) clearInterval(timerRef.current)
         setPhase('review')
         return
@@ -184,9 +197,9 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
           </h1>
           <p className="mt-2 max-w-md text-sm leading-relaxed text-ink-500">
             Before starting <b className="text-ink-900">{subjectName} ({subjectChinese})</b>, the camera
-            must simply show that <b className="text-ink-900">you are there</b>. As soon as a face is
-            detected the test passes — no other checks are performed. The check keeps running until it
-            passes — it never gives up on you.
+            simply verifies that <b className="text-ink-900">your camera works</b>. This is a{' '}
+            <b className="text-ink-900">trial run</b> — nothing you do on camera can disqualify you:
+            movements and any unusual activity are ignored.
           </p>
         </div>
 
@@ -202,8 +215,15 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
           />
           <canvas ref={canvasRef} className="hidden" />
 
-          {/* Attempt badge */}
-          {(phase === 'testing' || phase === 'notvisible') && (
+          {/* Trial banner */}
+          {TRIAL_MODE && (
+            <div className="absolute left-2 top-2 rounded-full bg-sky-600/90 px-2.5 py-1 text-[11px] font-bold text-white">
+              Trial run — nothing can disqualify you
+            </div>
+          )}
+
+          {/* Attempt badge — irrelevant in the trial (passes on first readable frame) */}
+          {!TRIAL_MODE && (phase === 'testing' || phase === 'notvisible') && (
             <div className="absolute left-2 top-2 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-bold text-white">
               Attempt {attempt}
             </div>
@@ -215,7 +235,9 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
               <div className="rounded-xl bg-black/60 px-6 py-4 text-center">
                 <p className="text-lg font-bold text-white">Testing camera…</p>
                 <p className="mt-1 text-sm text-white/80">
-                  Make sure your face is visible. The test passes as soon as it detects you.
+                  {TRIAL_MODE
+                    ? 'Verifying your feed — the trial passes automatically.'
+                    : 'Make sure your face is visible. The test passes as soon as it detects you.'}
                 </p>
                 <div className="mt-3 h-2 w-48 overflow-hidden rounded-full bg-white/20">
                   <div
@@ -249,7 +271,9 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
             <div className="absolute inset-0 flex items-center justify-center bg-black/30">
               <div className="rounded-xl bg-emerald-600/90 px-6 py-4 text-center">
                 <p className="text-lg font-bold text-white">Camera test passed</p>
-                <p className="mt-1 text-sm text-white/80">Face detected — you are visible</p>
+                <p className="mt-1 text-sm text-white/80">
+                  {TRIAL_MODE ? 'Feed verified — trial check complete' : 'Face detected — you are visible'}
+                </p>
               </div>
             </div>
           )}
@@ -269,8 +293,8 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
               <ul className="mt-3 space-y-2">
                 {[
                   'Your camera is working and the feed is live',
-                  'You are visible in the frame — a face is detected',
-                  'There is no limit on retries — the check repeats until you pass',
+                  'That is all — in this trial nobody needs to stay visible',
+                  'Movements and activity are ignored; nothing can disqualify you',
                 ].map((req) => (
                   <li key={req} className="flex items-start gap-2 text-sm text-ink-700">
                     <span className="mt-0.5 text-brand-600">•</span>
@@ -301,10 +325,12 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
         {phase === 'testing' && (
           <div className="mt-6 rounded-xl border border-brand-300 bg-brand-50 p-4">
             <p className="text-sm font-semibold text-brand-700">
-              Camera test in progress — attempt {attempt}. The test passes as soon as it detects your face…
+              Camera test in progress — the trial only verifies that your feed works…
             </p>
             <p className="mt-1 text-xs text-brand-600">
-              Stay in front of the camera until a face is detected.
+              {TRIAL_MODE
+                ? 'Nothing can disqualify you here — just wait a moment while the feed is checked.'
+                : 'Stay in front of the camera until a face is detected.'}
             </p>
           </div>
         )}
@@ -324,7 +350,9 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
             <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-5">
               <p className="text-sm font-bold text-emerald-700">Camera test passed</p>
               <p className="mt-1 text-sm text-emerald-600">
-                A face was detected — you are visible on camera. Proceed to the room scan.
+                {TRIAL_MODE
+                  ? 'Your camera works and the feed is live. Proceed to the room scan.'
+                  : 'A face was detected — you are visible on camera. Proceed to the room scan.'}
               </p>
             </div>
             <button
@@ -351,8 +379,8 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
                 {failedReason}
               </p>
               <p className="mt-3 text-xs font-semibold text-amber-600">
-                There is no limit on retries — fix the issue above and try again. The paper will not
-                start until this check passes.
+                This is a trial run — there is no limit on retries and you cannot be disqualified.
+                Fix the issue above and try again whenever you are ready.
               </p>
             </div>
 
@@ -396,14 +424,12 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
               </p>
             </div>
           </div>
-        )}
-
-        {/* Warning footer */}
+        )}        {/* Warning footer */}
         <div className="mt-8 rounded-xl border border-amber-300/50 bg-amber-50/50 p-4">
           <p className="text-xs font-semibold text-amber-700">
-            The camera test is mandatory and repeats until it detects your face — there is no attempt
-            limit. If you are not visible, the test restarts automatically and warns you to look at the
-            camera. Denying camera access results in automatic disqualification.
+            {TRIAL_MODE
+              ? 'Trial run: the camera test only checks that your feed works. You cannot be disqualified here — any movement or absence is ignored, and retries are unlimited.'
+              : 'The camera test is mandatory and repeats until it detects your face — there is no attempt limit. If you are not visible, the test restarts automatically and warns you to look at the camera. Denying camera access results in automatic disqualification.'}
           </p>
         </div>
       </div>
