@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { subjects } from '../data/exams'
 import { getQuestions } from '../data/questions'
 import { accuracyPercent, announcementAt, formatDuration, resultsAnnounced } from '../lib/exam'
-import type { Candidate, SubjectId, SubjectResult } from '../types'
+import type { Candidate, Disqualification, SubjectId, SubjectResult } from '../types'
 
 interface SubjectsPageProps {
   candidate: Candidate
@@ -10,6 +10,8 @@ interface SubjectsPageProps {
   onResume: (subject: SubjectId) => void
   onReview: (subject: SubjectId) => void
   onLogout: () => void
+  /** When set, the candidate is disqualified: dashboard visible, papers locked. */
+  disqualification: Disqualification | null
 }
 
 function statusOf(result: SubjectResult | undefined, now: number) {
@@ -24,7 +26,14 @@ function statusOf(result: SubjectResult | undefined, now: number) {
     : { label: 'Awaiting result', tone: 'text-amber-700 bg-amber-100' }
 }
 
-export function SubjectsPage({ candidate, results, onResume, onReview, onLogout }: SubjectsPageProps) {
+export function SubjectsPage({
+  candidate,
+  results,
+  onResume,
+  onReview,
+  onLogout,
+  disqualification,
+}: SubjectsPageProps) {
   const [now, setNow] = useState(() => Date.now())
   // Re-evaluate live statuses (expired clocks, remaining minutes) every 15 s.
   useEffect(() => {
@@ -33,6 +42,7 @@ export function SubjectsPage({ candidate, results, onResume, onReview, onLogout 
   }, [])
 
   const completed = subjects.filter((s) => results[s.id]?.completed)
+  const disqualified = disqualification !== null
   const announcedList = completed.filter((s) => resultsAnnounced(results[s.id]!))
   const totalScore = announcedList.reduce((sum, s) => sum + (results[s.id]?.correct ?? 0), 0)
   const allDone = completed.length === subjects.length
@@ -99,6 +109,41 @@ export function SubjectsPage({ candidate, results, onResume, onReview, onLogout 
           <p className="mt-1 text-xs text-ink-500">announced results only</p>
         </div>
       </div>
+
+      {/* Disqualification notice — papers are locked, dashboard stays visible */}
+      {disqualified && disqualification && (
+        <div className="mt-4 rounded-2xl border-2 border-red-300 bg-red-50 p-5">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100">
+              <svg viewBox="0 0 24 24" className="h-6 w-6 fill-red-600" aria-hidden="true">
+                <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 2a8 8 0 0 1 6.32 12.9L5.1 7.68A8 8 0 0 1 12 4Zm0 16a8 8 0 0 1-6.32-12.9l13.22 13.22A8 8 0 0 1 12 20Z" />
+              </svg>
+            </span>
+            <div>
+              <h2 className="text-base font-extrabold text-red-700">
+                You have been disqualified from the examination
+              </h2>
+              <p className="mt-1 text-sm leading-relaxed text-red-600">
+                <b>{disqualification.reason}</b>
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-red-500">
+                Detected during{' '}
+                {disqualification.phase === 'camera-test'
+                  ? 'camera verification'
+                  : disqualification.phase === 'room-check'
+                    ? 'the room scan'
+                    : 'in-test monitoring'}{'​'}on{'​'}
+                {new Date(disqualification.at).toLocaleString(undefined, {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                })}
+                . All papers are locked — this decision is final. If you believe this is an error,
+                contact the admissions office at <b>admissions@qqhru.edu.cn</b> within 48 hours.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {allDone && (
         <div className="mt-4 rounded-2xl border border-emerald-300 bg-emerald-50 p-4">
@@ -188,7 +233,16 @@ export function SubjectsPage({ candidate, results, onResume, onReview, onLogout 
               </div>
 
               <div className="mt-4 flex gap-2">
-                {!result ? (
+                {disqualified ? (
+                  <button
+                    type="button"
+                    disabled
+                    title="Disqualified — papers are locked"
+                    className="flex-1 cursor-not-allowed rounded-xl bg-ink-300/40 px-4 py-2.5 text-sm font-bold text-ink-500"
+                  >
+                    🔒 Locked
+                  </button>
+                ) : !result ? (
                   <button
                     type="button"
                     onClick={() => onResume(s.id)}

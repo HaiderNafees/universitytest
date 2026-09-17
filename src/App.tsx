@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { CameraTest } from './components/CameraTest'
-import { DisqualifiedPage } from './components/DisqualifiedPage'
 import { Header } from './components/Header'
 import { HomePage } from './components/HomePage'
 import { ResultsPage } from './components/ResultsPage'
@@ -116,9 +115,8 @@ export default function App() {
   const [results, setResults] = useState<Partial<Record<SubjectId, SubjectResult>>>(boot.results)
   const [disqualification, setDisqualification] = useState<Disqualification | null>(boot.disqualification)
   const [resultsOwner, setResultsOwner] = useState<string | null>(boot.resultsOwner)
-  const [view, setView] = useState<View>(() =>
-    boot.disqualification ? 'disqualified' : boot.candidate ? 'subjects' : 'home',
-  )
+  // A disqualified candidate still lands on the dashboard (papers locked there).
+  const [view, setView] = useState<View>(() => (boot.candidate ? 'subjects' : 'home'))
   const [active, setActive] = useState<SubjectId | null>(null)
 
   // Persist everything except the transient route.
@@ -150,12 +148,15 @@ export default function App() {
     setView('test')
   }, [])
 
-  /** Automatic disqualification — final and persisted; locks every paper. */
+  /**
+   * Automatic disqualification — final and persisted. The candidate keeps
+   * dashboard access (results, statuses, review) but every paper is locked.
+   */
   const disqualify = useCallback(
     (reason: string, phase: Disqualification['phase'], subjectId: SubjectId | null) => {
       setDisqualification({ reason, at: Date.now(), phase, subjectId })
       setActive(null)
-      setView('disqualified')
+      setView('subjects')
     },
     [],
   )
@@ -281,13 +282,24 @@ export default function App() {
     )
   }
 
-  // A disqualification is final and locks every paper.
-  if (disqualification) {
+  // Hard guard: a disqualified candidate can never open a paper (rules,
+  // camera test, room check or the test itself) — mid-test disqualifications
+  // funnel straight back to the dashboard. Result review stays available.
+  const paperView =
+    view === 'rules' || view === 'cameratest' || view === 'roomcheck' || view === 'test'
+  if (disqualification && paperView) {
     return (
       <div className="flex min-h-screen flex-col">
-        <Header candidate={candidate} onHome={() => {}} />
+        <Header candidate={candidate} onHome={goSubjects} />
         <main className="flex-1">
-          <DisqualifiedPage candidate={candidate} info={disqualification} onLogout={logout} />
+          <SubjectsPage
+            candidate={candidate}
+            results={results}
+            onResume={() => {}}
+            onReview={review}
+            onLogout={logout}
+            disqualification={disqualification}
+          />
         </main>
         <Footer />
       </div>
@@ -377,6 +389,7 @@ export default function App() {
         onResume={beginOrResume}
         onReview={review}
         onLogout={logout}
+        disqualification={disqualification}
       />
     )
 

@@ -65,4 +65,3 @@ export type View =
   | 'test'
   | 'results'
   | 'submitted'
-  | 'disqualified'
