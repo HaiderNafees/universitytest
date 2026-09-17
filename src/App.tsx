@@ -14,7 +14,14 @@ import { getQuestions } from './data/questions'
 import { grade, resultsAnnounced } from './lib/exam'
 import type { Candidate, Disqualification, SubjectId, SubjectResult, View } from './types'
 
-const STORAGE_KEY = 'qiqihar-csca-exam-v1'
+/**
+ * v2: fresh start for the new CSCA Advanced question bank — all previously
+ * saved results, in-progress attempts and disqualifications are discarded.
+ * Bumping this key resets every candidate's browser on next visit.
+ */
+const STORAGE_KEY = 'qiqihar-csca-exam-v2'
+/** Previous storage version — removed once on boot to clear stale user data. */
+const LEGACY_STORAGE_KEYS = ['qiqihar-csca-exam-v1']
 const TIME_LIMIT_MS = 45 * 60 * 1000
 
 interface Persisted {
@@ -44,6 +51,14 @@ function freshResult(subjectId: SubjectId): SubjectResult {
 
 function loadPersisted(): Persisted {
   const fallback: Persisted = { candidate: null, results: {}, disqualification: null, resultsOwner: null }
+  // One-time cleanup of previous storage versions — old exam data is stale.
+  for (const legacyKey of LEGACY_STORAGE_KEYS) {
+    try {
+      localStorage.removeItem(legacyKey)
+    } catch {
+      /* ignore */
+    }
+  }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return fallback
