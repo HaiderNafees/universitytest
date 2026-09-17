@@ -66,7 +66,7 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
     streamRef.current = null
   }, [])
 
-  /** One frame at a time: pixel heuristics + the ML face count. */
+  /** One frame at a time. The scan only cares about people — nothing else. */
   const sampleViolation = useCallback((): string | null => {
     const video = videoRef.current
     const canvas = canvasRef.current
@@ -86,12 +86,15 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
     if (ml && ml.faces >= 2) {
       return 'Multiple people detected in the room. Please ask anyone else to leave and scan again.'
     }
-    // During room scan, pixel-only multi-person is a soft hint — require ML
-    // confirmation before treating it as a real violation.
-    if (px.personCount === 2 && (!ml || ml.faces < 2)) {
-      return null
+    // Skin in several frame regions means another person is likely present
+    // even if the model can't see their face (back turned, partially hidden).
+    // An empty frame or a single person (the candidate panning around) is fine.
+    if (px.personCount === 2) {
+      return 'Multiple people detected in the room. Please ask anyone else to leave and scan again.'
     }
-    return px.violation
+    // Lighting, brightness and movement are deliberately NOT checked here —
+    // the room scan only verifies that no one else is in the room.
+    return null
   }, [])
 
   const performScan = useCallback(() => {
@@ -339,7 +342,7 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
                 Room verification passed
               </p>
               <p className="mt-1 text-sm text-emerald-600">
-                No other person or unusual activity was detected. You may proceed with the test.
+                No other person was detected. You may proceed with the test.
               </p>
             </div>
 
@@ -378,8 +381,8 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
               <p className="mt-3 text-xs font-semibold text-amber-600">
                 You are not disqualified yet — you have{' '}
                 {Math.max(0, MAX_SCANS - attempt)} attempt
-                {MAX_SCANS - attempt === 1 ? '' : 's'} left. Ask anyone present to leave,
-                move to the next room, or fix the lighting, then scan again.
+                {MAX_SCANS - attempt === 1 ? '' : 's'} left. Ask anyone present to leave or
+                move to the next room, then scan again.
               </p>
             </div>
 

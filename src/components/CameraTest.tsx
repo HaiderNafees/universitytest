@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { analyzeFrame, captureFrame } from '../lib/proctor'
-import { detectFaceFrame, ensureVisionLoaded, isVisionReady } from '../lib/vision'
+import { detectFaceFrame, ensureVisionLoaded } from '../lib/vision'
 
 interface CameraTestProps {
   subjectName: string
@@ -13,35 +13,15 @@ interface CameraTestProps {
 type Phase = 'permission' | 'testing' | 'notvisible' | 'review' | 'failed' | 'rejected'
 
 /**
- * Live camera check. There is no attempt limit: the check keeps running /
- * retrying until it passes, so the candidate simply cannot start a paper
- * until the environment verifies. A candidate who is not visible gets the
- * test auto-restarted with a loud warning; anything else that fails the check
- * is shown as a "failed attempt" the candidate can retry as many times as
- * needed. The only automatic disqualification here is denying camera access.
+ * Live camera check — presence only. The test simply verifies that the
+ * candidate is there: as soon as a face is detected in the feed the test
+ * passes. While nobody is visible it warns loudly and restarts the attempt,
+ * never giving up, so a paper cannot be started without the candidate on
+ * camera. The only automatic disqualification here is denying camera access.
  */
 const TEST_MS = 6000
 const SAMPLE_MS = 600
 const NOT_VISIBLE_DELAY_MS = 1500
-
-interface TestStats {
-  samples: number
-  clean: number
-  personVisible: number
-  /** ML samples in which the candidate's face was found */
-  faceSamples: number
-  /** ML samples in which the candidate was looking at the camera */
-  lookingCount: number
-  motionSum: number
-  reasonCounts: Record<string, number>
-}
-
-interface ChecksSeen {
-  feed: boolean
-  person: boolean
-  lighting: boolean
-  looking: boolean
-}
 
 export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, onCancel }: CameraTestProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -55,12 +35,11 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
   const [attempt, setAttempt] = useState(1)
   const [cameraError, setCameraError] = useState('')
   const [progress, setProgress] = useState(0)
+  const [failedReason, setFailedReason] = useState('')
   const [rejectedReason, setRejectedReason] = useState('')
-  const [checks, setChecks] = useState<ChecksSeen>({ feed: false, person: false, lighting: false, looking: false })
-  const [lookAway, setLookAway] = useState(false)
 
-  // Warm up the face model as soon as this screen mounts so the ML checks
-  // are typically live by the time the first attempt starts.
+  // Warm up the face model as soon as this screen mounts so the ML check is
+  // typically live by the time the first attempt starts.
   useEffect(() => {
     ensureVisionLoaded()
   }, [])
@@ -81,7 +60,7 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
 
   /**
    * Disqualification for the pre-test stage is reserved for refusing camera
-   * access — repeated failed checks only keep the candidate out of the paper.
+   * access — not being visible only keeps the candidate out of the paper.
    */
   const reject = useCallback(
     (reason: string) => {
@@ -97,55 +76,14 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
   /** A failed attempt — retries are unlimited, so this never disqualifies. */
   const failAttempt = useCallback((reason: string) => {
     if (timerRef.current) clearInterval(timerRef.current)
-    setRejectedReason(reason)
+    setFailedReason(reason)
     setPhase('failed')
   }, [])
-
-  const finish = useCallback(
-    (seen: ChecksSeen, stats: TestStats) => {
-      const { samples, clean, personVisible, faceSamples, lookingCount, motionSum, reasonCounts } = stats
-
-      if (samples < 2) {
-        failAttempt('The camera feed could not be read. The test environment cannot be verified.')
-        return
-      }
-      if (!seen.feed || motionSum <= 0) {
-        failAttempt('The camera feed appears to be frozen — your camera is not working properly.')
-        return
-      }
-      const multi = reasonCounts['Multiple people detected in the room. Only the test-taker may be present.'] ?? 0
-      if (multi >= 2) {
-        failAttempt('Multiple people detected in the room. Only the test-taker may be present.')
-        return
-      }
-      if (!seen.person || personVisible < Math.max(2, Math.floor(samples * 0.5))) {
-        failAttempt('No person detected — you must be clearly visible on camera during the test.')
-        return
-      }
-      // Look-at-the-camera gate. It only applies when the face model was live
-      // for most of the attempt (face seen in the majority of samples);
-      // otherwise the check falls back to presence/lighting only.
-      const visionEnforced = faceSamples >= Math.max(2, Math.floor(samples * 0.5))
-      if (visionEnforced && lookingCount < Math.max(2, Math.floor(faceSamples * 0.6))) {
-        failAttempt(
-          'You must look directly at the camera during the camera test. Look at the camera and try again.',
-        )
-        return
-      }
-      if (clean < Math.max(3, Math.floor(samples * 0.6))) {
-        const top = Object.entries(reasonCounts).sort((a, b) => b[1] - a[1])[0]
-        failAttempt(top ? top[0] : 'Unusual activity detected during the camera test.')
-        return
-      }
-      setPhase('review')
-    },
-    [failAttempt],
-  )
 
   /** Candidate not visible: warn loudly and restart the attempt from scratch. */
   function handleNotVisible(attemptNumber: number) {
     if (timerRef.current) clearInterval(timerRef.current)
-    setLookAway(false)
+    setPhase('notvisible')
     // Restart the attempt so the candidate gets a fresh window once they appear.
     // There is no cap on restarts — the test keeps going until they are visible.
     restartTimerRef.current = setTimeout(() => runTest(attemptNumber), NOT_VISIBLE_DELAY_MS)
@@ -155,19 +93,9 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
     setAttempt(attemptNumber)
     setPhase('testing')
     setProgress(0)
-    setLookAway(false)
     absentTicksRef.current = 0
-    let samples = 0
-    let clean = 0
-    let personVisible = 0
-    let faceSamples = 0
-    let lookingCount = 0
-    let motionSum = 0
-    let prev: ImageData | null = null
-    const seen: ChecksSeen = { feed: false, person: false, lighting: false, looking: false }
-    const reasonCounts: Record<string, number> = {}
+    let readable = 0
     const start = Date.now()
-    const visionWarm = isVisionReady()
 
     timerRef.current = setInterval(() => {
       const video = videoRef.current
@@ -176,67 +104,31 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
 
       setProgress(Math.min(100, ((Date.now() - start) / TEST_MS) * 100))
 
-      if (!captureFrame(video, canvas)) return
-
-      const analysis = analyzeFrame(canvas, prev)
-      prev = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height)
-
-      const ml = detectFaceFrame(video)
-      const visionOn = visionWarm || ml !== null || isVisionReady()
-
-      // No face at all (ML authoritative when available, pixel heuristic as
-      // a fallback). Two consecutive empty samples trigger the loud restart.
-      const personAbsentNow = ml !== null ? ml.faces === 0 : analysis.personCount === 0
-      if (personAbsentNow) {
-        absentTicksRef.current += 1
-        setLookAway(false)
-        if (absentTicksRef.current >= 2) {
-          handleNotVisible(attemptNumber)
+      if (!captureFrame(video, canvas)) {
+        // The feed could not be read at all within the attempt window.
+        if (Date.now() - start >= TEST_MS && readable === 0) {
+          failAttempt('The camera feed could not be read. The test environment cannot be verified.')
         }
         return
       }
-      absentTicksRef.current = 0
+      readable++
 
-      samples++
-      motionSum += analysis.motion
+      const ml = detectFaceFrame(video)
+      // Presence check only: any detected face means the candidate is there
+      // and the test passes immediately. The pixel heuristic is only a
+      // fallback for while the ML model is still loading.
+      const faceDetected = ml !== null ? ml.faces >= 1 : analyzeFrame(canvas, null).personCount >= 1
 
-      const gaze = ml?.primary?.gaze
-      const personNow = ml !== null ? ml.faces >= 1 : analysis.personCount === 1
-      if (personNow) personVisible++
-
-      // A second face found by the model is a hard failure of this attempt.
-      if (ml !== null && ml.faces >= 2) {
-        const multiMsg = 'Multiple people detected in the room. Only the test-taker may be present.'
-        reasonCounts[multiMsg] = (reasonCounts[multiMsg] ?? 0) + 1
-      }
-
-      if (ml !== null && gaze) {
-        faceSamples++
-        if (gaze.verdict === 'looking') {
-          lookingCount++
-          seen.looking = true
-          setLookAway(false)
-        } else {
-          const reason = gaze.reason ?? 'You are not looking at the camera.'
-          reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1
-          setLookAway(true)
-        }
-      } else if (visionOn) {
-        setLookAway(false)
-      }
-
-      if (!analysis.violation) clean++
-      if (analysis.violation) {
-        reasonCounts[analysis.violation] = (reasonCounts[analysis.violation] ?? 0) + 1
-      }
-      seen.feed = seen.feed || analysis.motion > 0.0005
-      seen.person = seen.person || personNow
-      seen.lighting = seen.lighting || (analysis.brightness >= 30 && analysis.brightness <= 235)
-      setChecks({ ...seen })
-
-      if (Date.now() - start >= TEST_MS) {
+      if (faceDetected) {
         if (timerRef.current) clearInterval(timerRef.current)
-        finish(seen, { samples, clean, personVisible, faceSamples, lookingCount, motionSum, reasonCounts })
+        setPhase('review')
+        return
+      }
+
+      absentTicksRef.current += 1
+      // Nobody visible — warn loudly and restart after two empty samples.
+      if (absentTicksRef.current >= 2) {
+        handleNotVisible(attemptNumber)
       }
     }, SAMPLE_MS)
   }
@@ -263,7 +155,7 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
   }
 
   function retry() {
-    setRejectedReason('')
+    setFailedReason('')
     runTest(attempt + 1)
   }
 
@@ -291,10 +183,10 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
             Camera Test Required
           </h1>
           <p className="mt-2 max-w-md text-sm leading-relaxed text-ink-500">
-            Before starting <b className="text-ink-900">{subjectName} ({subjectChinese})</b>, you must
-            pass a live camera test. The camera must show <b className="text-ink-900">exactly one person — you</b> —
-            clearly visible and <b className="text-ink-900">looking directly at the camera</b>, with proper lighting.
-            The check keeps running until it passes — it never gives up on you.
+            Before starting <b className="text-ink-900">{subjectName} ({subjectChinese})</b>, the camera
+            must simply show that <b className="text-ink-900">you are there</b>. As soon as a face is
+            detected the test passes — no other checks are performed. The check keeps running until it
+            passes — it never gives up on you.
           </p>
         </div>
 
@@ -323,7 +215,7 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
               <div className="rounded-xl bg-black/60 px-6 py-4 text-center">
                 <p className="text-lg font-bold text-white">Testing camera…</p>
                 <p className="mt-1 text-sm text-white/80">
-                  Look directly at the camera. Keep your face clearly visible.
+                  Make sure your face is visible. The test passes as soon as it detects you.
                 </p>
                 <div className="mt-3 h-2 w-48 overflow-hidden rounded-full bg-white/20">
                   <div
@@ -343,24 +235,10 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
                   YOU ARE NOT VISIBLE!
                 </p>
                 <p className="mt-2 text-sm font-semibold leading-relaxed text-white/90">
-                  Please look directly at the camera now.
+                  Please look at the camera now.
                 </p>
                 <p className="mt-1 text-xs text-white/80">
                   The test keeps restarting until your face is detected.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Look-away warning overlay */}
-          {phase === 'testing' && lookAway && (
-            <div className="absolute inset-0 flex items-start justify-center bg-black/20 p-4">
-              <div className="mt-16 w-full max-w-sm animate-pulse rounded-xl border-2 border-amber-400 bg-amber-500/95 px-5 py-4 text-center shadow-xl">
-                <p className="mt-1 text-base font-extrabold text-white">
-                  LOOK AT THE CAMERA!
-                </p>
-                <p className="mt-1 text-xs font-semibold text-white/90">
-                  Your eyes must stay on the camera during the check.
                 </p>
               </div>
             </div>
@@ -371,7 +249,7 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
             <div className="absolute inset-0 flex items-center justify-center bg-black/30">
               <div className="rounded-xl bg-emerald-600/90 px-6 py-4 text-center">
                 <p className="text-lg font-bold text-white">Camera test passed</p>
-                <p className="mt-1 text-sm text-white/80">One person detected · looking at camera · feed live</p>
+                <p className="mt-1 text-sm text-white/80">Face detected — you are visible</p>
               </div>
             </div>
           )}
@@ -391,10 +269,7 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
               <ul className="mt-3 space-y-2">
                 {[
                   'Your camera is working and the feed is live',
-                  'Exactly one person (you) is visible in the frame',
-                  'You are looking directly at the camera',
-                  'Your face is clearly visible with adequate lighting',
-                  'No second person appears anywhere in the room',
+                  'You are visible in the frame — a face is detected',
                   'There is no limit on retries — the check repeats until you pass',
                 ].map((req) => (
                   <li key={req} className="flex items-start gap-2 text-sm text-ink-700">
@@ -426,27 +301,11 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
         {phase === 'testing' && (
           <div className="mt-6 rounded-xl border border-brand-300 bg-brand-50 p-4">
             <p className="text-sm font-semibold text-brand-700">
-              Camera test in progress — attempt {attempt}. Look at the camera and do not look away…
+              Camera test in progress — attempt {attempt}. The test passes as soon as it detects your face…
             </p>
             <p className="mt-1 text-xs text-brand-600">
-              Keep your face visible and stay still. The test takes about 6 seconds.
+              Stay in front of the camera until a face is detected.
             </p>
-            <div className="mt-3 space-y-1.5 text-xs font-semibold">
-              <p className={checks.feed ? 'text-emerald-700' : 'text-ink-500'}>
-                {checks.feed ? '●' : '○'} Live camera feed
-              </p>
-              <p className={checks.person ? 'text-emerald-700' : 'text-ink-500'}>
-                {checks.person ? '●' : '○'} One person detected
-              </p>
-              {isVisionReady() && (
-                <p className={checks.looking ? 'text-emerald-700' : 'text-ink-500'}>
-                  {checks.looking ? '●' : '○'} Looking at the camera
-                </p>
-              )}
-              <p className={checks.lighting ? 'text-emerald-700' : 'text-ink-500'}>
-                {checks.lighting ? '●' : '○'} Adequate lighting
-              </p>
-            </div>
           </div>
         )}
 
@@ -465,8 +324,7 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
             <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-5">
               <p className="text-sm font-bold text-emerald-700">Camera test passed</p>
               <p className="mt-1 text-sm text-emerald-600">
-                Your camera works, you are the only person visible, and you are looking at the camera.
-                Proceed to the room scan.
+                A face was detected — you are visible on camera. Proceed to the room scan.
               </p>
             </div>
             <button
@@ -490,7 +348,7 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
                 Camera test not passed yet — attempt {attempt}
               </h2>
               <p className="mt-3 text-sm leading-relaxed text-amber-700">
-                {rejectedReason}
+                {failedReason}
               </p>
               <p className="mt-3 text-xs font-semibold text-amber-600">
                 There is no limit on retries — fix the issue above and try again. The paper will not
@@ -543,10 +401,9 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
         {/* Warning footer */}
         <div className="mt-8 rounded-xl border border-amber-300/50 bg-amber-50/50 p-4">
           <p className="text-xs font-semibold text-amber-700">
-            The camera test is mandatory and repeats until you pass — there is no 3-attempt limit.
-            If you are not visible, the test restarts automatically and warns you to look at the camera.
-            Denying camera access, covering the lens, or showing another person results in automatic
-            disqualification.
+            The camera test is mandatory and repeats until it detects your face — there is no attempt
+            limit. If you are not visible, the test restarts automatically and warns you to look at the
+            camera. Denying camera access results in automatic disqualification.
           </p>
         </div>
       </div>
