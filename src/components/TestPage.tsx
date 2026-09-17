@@ -165,7 +165,7 @@ export function TestPage({ meta, questions, result, onAnswer, onToggleFlag, onSu
               title="Camera proctoring status"
             >
               {TRIAL_MODE
-                ? 'Trial run — movement is ignored'
+                ? 'run — movement is ignored'
                 : proctor.warning
                   ? proctor.warning
                   : proctor.active

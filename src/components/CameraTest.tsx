@@ -198,7 +198,7 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
           <p className="mt-2 max-w-md text-sm leading-relaxed text-ink-500">
             Before starting <b className="text-ink-900">{subjectName} ({subjectChinese})</b>, the camera
             simply verifies that <b className="text-ink-900">your camera works</b>. This is a{' '}
-            <b className="text-ink-900">trial run</b> — nothing you do on camera can disqualify you:
+            <b className="text-ink-900">run</b> — nothing you do on camera can disqualify you:
             movements and any unusual activity are ignored.
           </p>
         </div>
@@ -218,7 +218,7 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
           {/* Trial banner */}
           {TRIAL_MODE && (
             <div className="absolute left-2 top-2 rounded-full bg-sky-600/90 px-2.5 py-1 text-[11px] font-bold text-white">
-              Trial run — nothing can disqualify you
+              run — nothing can disqualify you
             </div>
           )}
 
@@ -236,7 +236,7 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
                 <p className="text-lg font-bold text-white">Testing camera…</p>
                 <p className="mt-1 text-sm text-white/80">
                   {TRIAL_MODE
-                    ? 'Verifying your feed — the trial passes automatically.'
+                    ? 'Verifying your feed — the passes automatically.'
                     : 'Make sure your face is visible. The test passes as soon as it detects you.'}
                 </p>
                 <div className="mt-3 h-2 w-48 overflow-hidden rounded-full bg-white/20">
@@ -272,7 +272,7 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
               <div className="rounded-xl bg-emerald-600/90 px-6 py-4 text-center">
                 <p className="text-lg font-bold text-white">Camera test passed</p>
                 <p className="mt-1 text-sm text-white/80">
-                  {TRIAL_MODE ? 'Feed verified — trial check complete' : 'Face detected — you are visible'}
+                  {TRIAL_MODE ? 'Feed verified — check complete' : 'Face detected — you are visible'}
                 </p>
               </div>
             </div>
@@ -293,7 +293,7 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
               <ul className="mt-3 space-y-2">
                 {[
                   'Your camera is working and the feed is live',
-                  'That is all — in this trial nobody needs to stay visible',
+                  'That is all — in this nobody needs to stay visible',
                   'Movements and activity are ignored; nothing can disqualify you',
                 ].map((req) => (
                   <li key={req} className="flex items-start gap-2 text-sm text-ink-700">
@@ -325,7 +325,7 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
         {phase === 'testing' && (
           <div className="mt-6 rounded-xl border border-brand-300 bg-brand-50 p-4">
             <p className="text-sm font-semibold text-brand-700">
-              Camera test in progress — the trial only verifies that your feed works…
+              Camera test in progress — the only verifies that your feed works…
             </p>
             <p className="mt-1 text-xs text-brand-600">
               {TRIAL_MODE
@@ -379,7 +379,7 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
                 {failedReason}
               </p>
               <p className="mt-3 text-xs font-semibold text-amber-600">
-                This is a trial run — there is no limit on retries and you cannot be disqualified.
+                This is a run — there is no limit on retries and you cannot be disqualified.
                 Fix the issue above and try again whenever you are ready.
               </p>
             </div>
@@ -428,7 +428,7 @@ export function CameraTest({ subjectName, subjectChinese, onPass, onDisqualify, 
         <div className="mt-8 rounded-xl border border-amber-300/50 bg-amber-50/50 p-4">
           <p className="text-xs font-semibold text-amber-700">
             {TRIAL_MODE
-              ? 'Trial run: the camera test only checks that your feed works. You cannot be disqualified here — any movement or absence is ignored, and retries are unlimited.'
+              ? 'run: the camera test only checks that your feed works. You cannot be disqualified here — any movement or absence is ignored, and retries are unlimited.'
               : 'The camera test is mandatory and repeats until it detects your face — there is no attempt limit. If you are not visible, the test restarts automatically and warns you to look at the camera. Denying camera access results in automatic disqualification.'}
           </p>
         </div>

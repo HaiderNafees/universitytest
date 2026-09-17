@@ -225,7 +225,7 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
           </h1>
           <p className="mt-2 max-w-md text-sm leading-relaxed text-ink-500">
             Before starting <b className="text-ink-900">{subjectName} ({subjectChinese})</b>, pan your
-            camera around the room. This is a <b className="text-ink-900">trial run</b> — the scan
+            camera around the room. This is a <b className="text-ink-900">run</b> — the scan
             cannot disqualify you, and any movement or activity it detects is simply{' '}
             <b className="text-ink-900">ignored</b>.
           </p>
@@ -246,7 +246,7 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
           {/* Trial banner */}
           {TRIAL_MODE && (
             <div className="absolute left-2 top-2 rounded-full bg-sky-600/90 px-2.5 py-1 text-[11px] font-bold text-white">
-              Trial run — nothing can disqualify you
+              run — nothing can disqualify you
             </div>
           )}
 
@@ -282,10 +282,10 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
             <div className="absolute inset-0 flex items-center justify-center bg-black/30">
               <div className="rounded-xl bg-emerald-600/90 px-6 py-4 text-center">
                 <p className="text-lg font-bold text-white">
-                  {TRIAL_MODE ? 'Trial scan complete' : 'Room verified — clear'}
+                  {TRIAL_MODE ? 'scan complete' : 'Room verified — clear'}
                 </p>
                 <p className="mt-1 text-sm text-white/80">
-                  {TRIAL_MODE ? 'Nothing was flagged — results are ignored in the trial' : 'No other person detected'}
+                  {TRIAL_MODE ? 'Nothing was flagged — results are ignored in the' : 'No other person detected'}
                 </p>
               </div>
             </div>
@@ -311,7 +311,7 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
               <ul className="mt-3 space-y-2">
                 {[
                   'Your camera is turned on and working',
-                  'You can pan around the room — nothing is judged in this trial',
+                  'You can pan around the room — nothing is judged in this',
                   'Movement, other people, lighting — everything is ignored for now',
                   `In the real exam: up to ${MAX_SCANS} scans, with unlimited retries before any disqualification`,
                 ].map((req) => (
@@ -362,7 +362,7 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
               </p>
               <p className="mt-1 text-sm text-emerald-600">
                 {TRIAL_MODE
-                  ? 'Trial scan finished — whatever it detected was ignored. You may proceed with the trial test.'
+                  ? 'scan finished — whatever it detected was ignored. You may proceed with the test.'
                   : 'No other person was detected. You may proceed with the test.'}
               </p>
             </div>
@@ -401,7 +401,7 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
               </p>
               <p className="mt-3 text-xs font-semibold text-amber-600">
                 {TRIAL_MODE
-                  ? 'This is a trial run — you are not disqualified and never will be during the trial. Scan again whenever you like.'
+                  ? 'This is a run — you are not disqualified and never will be during the. Scan again whenever you like.'
                   : 'You are not disqualified yet — you have ' +
                     Math.max(0, MAX_SCANS - attempt) +
                     ' attempt' +
@@ -455,7 +455,7 @@ export function RoomCheck({ subjectName, subjectChinese, onPass, onDisqualify, o
         <div className="mt-8 rounded-xl border border-amber-300/50 bg-amber-50/50 p-4">
           <p className="text-xs font-semibold text-amber-700">
             {TRIAL_MODE
-              ? 'Trial run: the room scan is only a dry run. Whatever it detects — movement, people, lighting — is ignored, and you can never be disqualified from a trial scan.'
+              ? 'run: the room scan is only a dry run. Whatever it detects — movement, people, lighting — is ignored, and you can never be disqualified from a scan.'
               : 'You get ' + MAX_SCANS + ' room scans — a flagged scan is never an instant disqualification. However, denying camera access, using fake video feeds, or repeatedly failing the scan results in automatic disqualification from the examination.'}
           </p>
         </div>
