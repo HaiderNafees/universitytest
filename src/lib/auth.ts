@@ -1,28 +1,42 @@
 import credentials from '../data/credentials.json'
-import type { Candidate } from '../types'
-
-/** A candidate account from the credentials registry. */
-export interface CandidateAccount {
-  username: string
-  password: string
-  name: string
-  passport: string
-  nationality: string
-  email: string
-}
-
-const accounts: CandidateAccount[] = credentials.candidates ?? []
+import type { Account, Session } from '../types'
 
 /**
- * Verify a username/password pair against the credentials registry.
- * Returns the candidate profile (without the password) on success, null on failure.
+ * The account registry — keyed by username. It ships inside the bundle for
+ * this local demo portal; a production deployment would authenticate
+ * server-side and never expose passwords or results.
  */
-export function authenticate(username: string, password: string): Candidate | null {
-  const match = accounts.find(
-    (c) => c.username.toLowerCase() === username.trim().toLowerCase() && c.password === password,
-  )
-  if (!match) return null
-  const { password: _password, ...profile } = match
-  return profile
+const registry = credentials as unknown as Record<string, Omit<Account, 'username'>>
+
+const accounts: Account[] = Object.entries(registry).map(([username, account]) => ({
+  ...account,
+  username,
+}))
+
+function findAccount(username: string): Account | undefined {
+  const needle = username.trim().toLowerCase()
+  return accounts.find((a) => a.username.toLowerCase() === needle)
 }
 
+function toSession(account: Account): Session {
+  return {
+    username: account.username,
+    name: account.name,
+    id: account.id,
+    result: account.result,
+    score: account.score,
+  }
+}
+
+/** Verify a username/password pair. Returns the signed-in session (no password) or null. */
+export function authenticate(username: string, password: string): Session | null {
+  const match = findAccount(username)
+  if (!match || match.password !== password) return null
+  return toSession(match)
+}
+
+/** Look up a session by username — used to restore a persisted sign-in. */
+export function findSessionByUsername(username: string): Session | null {
+  const match = findAccount(username)
+  return match ? toSession(match) : null
+}
