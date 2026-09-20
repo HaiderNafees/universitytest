@@ -1,5 +1,16 @@
 import credentials from '../data/credentials.json'
-import type { Account, Session } from '../types'
+import type { Account, Result, Session, SubjectMarks } from '../types'
+
+/** The four subjects and their display names, in official table order. */
+export const SUBJECTS: ReadonlyArray<{ key: keyof SubjectMarks; name: string }> = [
+  { key: 'english', name: 'English' },
+  { key: 'chemistry', name: 'Chemistry' },
+  { key: 'math', name: 'Mathematics' },
+  { key: 'physics', name: 'Physics' },
+]
+
+/** Maximum marks per subject paper. */
+export const MAX_PER_SUBJECT = 48
 
 /**
  * The account registry — keyed by username. It ships inside the bundle for
@@ -23,8 +34,9 @@ function toSession(account: Account): Session {
     username: account.username,
     name: account.name,
     id: account.id,
-    result: account.result,
+    result: account.result as Result,
     score: account.score,
+    subjects: account.subjects as SubjectMarks,
   }
 }
 
