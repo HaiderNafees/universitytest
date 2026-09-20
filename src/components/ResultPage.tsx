@@ -28,8 +28,11 @@ export function ResultPage({ session, onSignOut }: ResultPageProps) {
             Official Result Declaration
           </p>
           <h1 className="mt-2 font-serif text-2xl font-bold tracking-tight text-ink-900 sm:text-3xl">
-            University Scholarship Test
+            齐齐哈尔大学奖学金考试
           </h1>
+          <p className="mt-1 text-sm font-semibold tracking-tight text-ink-700">
+            Qiqihar University Scholarship Test
+          </p>
         </div>
 
         {/* Candidate details */}
@@ -72,8 +75,8 @@ export function ResultPage({ session, onSignOut }: ResultPageProps) {
             {passed ? (
               <>
                 <p className="max-w-xl text-sm font-semibold leading-relaxed text-emerald-900">
-                  You have PASSED the University Scholarship Test with an overall score
-                  of {session.score}%.
+                  You have PASSED the Qiqihar University Scholarship Test with an overall
+                  score of {session.score}%.
                 </p>
                 <p className="max-w-xl text-sm leading-relaxed text-ink-700">
                   Your admission process will proceed. Further details will be

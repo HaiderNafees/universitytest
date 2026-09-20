@@ -8,7 +8,7 @@ import type { Session } from './types'
 const STORAGE_KEY = 'universitytest-session-v1'
 
 /**
- * University Scholarship Test — Result Portal.
+ * Qiqihar University Scholarship Test — Result Portal.
  * Simple flow: login → personalized result. No exam, subjects, timers or
  * proctoring; every previous test view and its data have been removed.
  */
@@ -44,7 +44,10 @@ export default function App() {
             </span>
             <span className="min-w-0">
               <span className="block truncate font-serif text-lg font-bold leading-tight text-brand-900">
-                University Scholarship Test
+                齐齐哈尔大学奖学金考试
+                <span className="ml-2 font-sans text-sm font-bold tracking-tight text-ink-900">
+                  Qiqihar University Scholarship Test
+                </span>
               </span>
               <span className="block truncate text-xs font-medium tracking-wide text-ink-500">
                 Result Portal
@@ -65,6 +68,7 @@ export default function App() {
       <footer className="mt-auto border-t border-ink-300/30 bg-white">
         <div className="mx-auto max-w-6xl px-4 py-6 text-center sm:px-6">
           <p className="text-xs font-semibold text-ink-500">
+            <span className="font-serif text-brand-700">齐齐哈尔大学奖学金考试</span> Qiqihar
             University Scholarship Test · Result Portal
           </p>
         </div>

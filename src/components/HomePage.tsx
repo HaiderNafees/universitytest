@@ -44,12 +44,12 @@ export function HomePage({ onLogin }: HomePageProps) {
         <div className="relative mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
           <span className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] backdrop-blur">
             <span className="h-1.5 w-1.5 rounded-full bg-gold-400" />
-            University Scholarship Test
+            Official Result Portal
           </span>
           <h1 className="mt-5 max-w-3xl font-serif text-4xl font-bold leading-tight sm:text-5xl">
-            Result Portal
+            齐齐哈尔大学奖学金考试
             <span className="mt-2 block font-sans text-2xl font-extrabold tracking-tight sm:text-4xl">
-              University Scholarship Test
+              Qiqihar University Scholarship Test
             </span>
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-relaxed text-brand-50/90 sm:text-base">

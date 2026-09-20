@@ -1,6 +1,7 @@
-# University Scholarship Test — Result Portal
+# Qiqihar University Scholarship Test — Result Portal
 
-Login portal to view your University Scholarship Test result.
+齐齐哈尔大学奖学金考试 — Login portal to view your Qiqihar University Scholarship
+Test result.
 
 ## Run it
 
